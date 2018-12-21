@@ -1,0 +1,28 @@
+function out = one_layer_darwin(data,w,h,Window_size,Stride,poolType,normalization,CVAL,nonlinear)
+    n = size(data,1);
+    Dim = size(data,2)*2;
+    fstart = 1:Stride:(n-Window_size+1);
+    fend = fstart + Window_size -1;    
+    switch poolType
+        case 'classical'
+            out = zeros(numel(fstart),Dim);              
+    end
+    parfor  chunk = 1 : numel(fstart)
+        data_chuck = data(fstart(chunk):fend(chunk),:);
+        switch poolType
+            case 'classical'
+                out(chunk,:) = genRepresentation(data_chuck,CVAL,nonlinear);               
+        end              
+    end
+    %fprintf('\n');
+    switch normalization
+            case 'L2'
+                out = normalizeL2(out);
+            case 'None'
+                
+            case 'rootL2'                
+                out = normalizeL2(sqrt(out));
+            case 'SSRL2'                
+                out = normalizeL2(sign(out).*sqrt(abs(out)));    
+    end
+end
