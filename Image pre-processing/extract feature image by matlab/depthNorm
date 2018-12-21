@@ -1,0 +1,111 @@
+% main function
+function depthNorm(train_list)
+       
+    fullvideoname = getListofFiles(train_list);
+    outDir = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/depthNorm';  % for charLearn test dataset      
+    
+    [totalvideo,~] = size(fullvideoname);
+    for i = 1 : totalvideo
+        getDepthNorm(fullvideoname{i,2},fullvideoname(i,:),outDir);
+      
+    end      
+end
+
+function  getDepthNorm(depthVideo,fullname,IM_OUT_DIR)
+ name = fullname{1};    
+ S = regexp(name,'/','split'); 
+ [~,which,~] = fileparts(name);
+ sampleNum = regexp(which,'_','split');
+ imageDir = fullfile(IM_OUT_DIR,S(end-2),S(end-1));
+ if exist(imageDir{1},'dir') ~= 7
+   mkdir(imageDir{1});
+ end
+ FILE = fullfile(imageDir,strcat(sampleNum(end),'.avi'));%for ChaLearn dataset :depthNorm video   
+ depthNorm = VideoWriter(FILE{1});
+ depthNorm.FrameRate = 10;
+ open(depthNorm); 
+ 
+ obj = VideoReader(depthVideo);
+ numFrames = obj.NumberOfFrames;
+ wd = obj.Width;
+ ht = obj.Height;
+ Depths = zeros(ht,wd,numFrames);
+ t= tic();
+for i = 1:numFrames
+   depthmap= read(obj, i);   
+   depthmap = rgb2gray(depthmap);
+   depthmap = im2double(depthmap);
+   if i == 1
+       [counts,binLocations]=imhist(depthmap);
+       maxv = max(counts(128:end));
+       myloc = find(counts == maxv);
+       posi = binLocations(myloc);
+       threshould = posi - 0.10;
+  end
+  %imhist(depthmap);
+                
+  for k = 1:wd*ht
+      if depthmap(k)>threshould
+          depthmap(k) = 0;
+      end
+  end
+  Depths(:,:,i) = depthmap;
+end
+dx = zeros(ht,wd);
+dy = zeros(ht,wd);
+dt = zeros(ht,wd);
+for f = 1:numFrames-1
+     % smooth
+     frame1 = medfilt2(Depths(:, :, f), [5, 5]);
+     frame2 = medfilt2(Depths(:, :, f + 1), [5, 5]);                
+     % derivatives along x/y/t
+     [dx(:, :), dy(:, :)] = gradient(frame1);
+     dt(:, :) = frame2 - frame1;
+     gradient_map = zeros(ht,wd,3);
+     gradient_map(:,:,1) = dx(:,:);
+     gradient_map(:,:,2) = dy(:,:);
+     gradient_map(:,:,3) = dt(:,:);
+     gradient_map = linearMapping(gradient_map);
+     gradient_map = uint8(gradient_map);
+     writeVideo(depthNorm,gradient_map);    
+end
+t= toc(t);
+fprintf('Data collection %1.2f sec for depth video\n',t);
+end
+
+
+function fullvideoname = getListofFiles(train_list)
+    dataPath = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/ChaLearn/IsoGD_phase_1';%for ChaLearn dataset
+    %  dataPath = 'D:\gestureRecognition\DHGD\SKIG_dataset'; %  for SKIG dataset
+    fid = fopen(train_list);
+    a = textscan(fid,'%s');
+    fclose(fid);
+    trainPath = a{1};
+    [length,~] = size(trainPath);
+    i = 1;
+    k = 1;
+ 
+    while (i <= length)
+        videoname_color{k} = trainPath{i};
+        videoname_depth{k} = trainPath{i+1};
+        videoname_label{k} = trainPath{i+2};
+        i = i+3; k = k+1;
+    end
+    if(size(videoname_color,2) ~= size(videoname_depth,2) || size(videoname_color,2) ~= size(videoname_label,2))
+        fprintf('depth video number must equal with color video number!');
+    end
+    for i = 1:size(videoname_color,2)
+        fullvideoname{i,1} = fullfile(dataPath,videoname_color{i});
+        fullvideoname{i,2} = fullfile(dataPath,videoname_depth{i});
+        fullvideoname{i,3} = videoname_label{i};
+    end
+end
+
+
+function x = linearMapping(x)
+    minV = min(x(:));
+    maxV = max(x(:));
+    x = x - minV;
+    x = x ./ (maxV - minV);
+    x = x .* 255;
+end
