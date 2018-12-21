@@ -1,0 +1,480 @@
+% main function
+function DynamicImage_DMM(train_list)
+    CVAL    = 1;    % The defaul C value for SVR
+    WIN     = 20;   % The window size of the poooling layers
+    STRIDE  = 1;    % The stride of the pooling layer
+    % define the network architecture
+    net = defineNetwork(CVAL,WIN,STRIDE);   
+    
+    %fullvideoname = getListofFiles(VideoPath_color,VideoPath_depth);
+    fullvideoname = getListofFiles(train_list);
+    outDir = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/';  % for charLearn dataset  
+    
+    %write path & label
+    writeFF = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/test_FFDepth_11_32.txt';
+    writeFR = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/test_FRDepth_11_32.txt';
+    writeRF = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/test_RFDepth_11_32.txt';
+    writeRR = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/test_RRDepth_11_32.txt';
+    writeDMM = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/test_DMM_11_32.txt';     
+    fid_FF = fopen(writeFF,'wt');
+    fid_FR = fopen(writeFR,'wt');
+    fid_RF = fopen(writeRF,'wt');
+    fid_RR = fopen(writeRR,'wt');
+    fid_DMM = fopen(writeDMM,'wt');
+    
+    
+    % process color frames:dynamic image
+     % process depth frames:depth motion maps
+    [totalvideo,~] = size(fullvideoname);
+    for i = 1 : totalvideo
+        %[zWFF,zWFR,zWRF,zWRR] = getDynamicImages(fullvideoname{i,1},net); 
+        [zWFF,zWFR,zWRF,zWRR] = getDynamicImages_depth(fullvideoname{i,2},net);
+        rgbdepth = getDMM(fullvideoname{i,2});
+        writeImage(fullvideoname(i,:),fid_FF,zWFF,outDir,'FFDepth');
+        writeImage(fullvideoname(i,:),fid_FR,zWFR,outDir,'FRDepth');
+        writeImage(fullvideoname(i,:),fid_RF,zWRF,outDir,'RFDepth');
+        writeImage(fullvideoname(i,:),fid_RR,zWRR,outDir,'RRDepth');
+        writeImage(fullvideoname(i,:),fid_DMM,rgbdepth,outDir,'DMM');
+    end  
+    
+    fclose(fid_FF);
+    fclose(fid_FR);
+    fclose(fid_RF);
+    fclose(fid_RR);
+    fclose(fid_DMM);
+    
+end
+
+
+% get dynamic images
+function [ff,fr,rf,rr] = getDynamicImages(videoname,net)
+    xyloObj = VideoReader(videoname);
+    h = xyloObj.Width;
+    w = xyloObj.Height;
+    s = struct('cdata',zeros(h,w,3,'uint8'),...
+    'colormap',[]);
+    k = 1;
+    
+    while hasFrame(xyloObj)
+        s(k).cdata = readFrame(xyloObj);
+         k= k+1;
+    end
+    nFrames = k-1;
+    t= tic();
+    gray = zeros(nFrames,h*w);
+    red = gray; blue = gray; green = gray;
+    for k = 1 : nFrames
+        im = double(s(k).cdata);
+        red(k,:) = reshape(im(:,:,1),1,h*w);
+        green(k,:) = reshape(im(:,:,2),1,h*w);
+        blue(k,:) = reshape(im(:,:,3),1,h*w);
+   end
+   t= toc(t);
+   fprintf('Data collection %1.2f sec.\n',t);
+   t= tic();          
+   % get the encoding of the sequence
+   [im_WFF_r,im_WFR_r,im_WRF_r,im_WRR_r] = passNetwork(red,w,h,net);
+   [im_WFF_g,im_WFR_g,im_WRF_g,im_WRR_g] = passNetwork(green,w,h,net);
+   [im_WFF_b,im_WFR_b,im_WRF_b,im_WRR_b] = passNetwork(blue,w,h,net);
+   t= toc(t);
+   fprintf('processImage %1.2f sec.\n',t);
+   t= tic(); 
+   ff  = getBackRGBImage(im_WFF_r,im_WFF_g,im_WFF_b);
+   fr  = getBackRGBImage(im_WFR_r,im_WFR_g,im_WFR_b);
+   rf  = getBackRGBImage(im_WRF_r,im_WRF_g,im_WRF_b);
+   rr  = getBackRGBImage(im_WRR_r,im_WRR_g,im_WRR_b);
+    
+   t= toc(t);
+   fprintf('getBackRGBImage %1.2f sec.\n',t);
+end
+
+function [ff,fr,rf,rr] = getDynamicImages_depth(videoname,net)
+  
+ obj = VideoReader(videoname);
+ numFrames = obj.NumberOfFrames;
+ wd = obj.Width;
+ ht = obj.Height;
+ Depths = zeros(ht,wd,numFrames);
+ t= tic();
+for i = 1:numFrames
+   depthmap= read(obj, i);   
+   depthmap = rgb2gray(depthmap);
+   depthmap = im2double(depthmap);
+   if i == 1
+       [counts,binLocations]=imhist(depthmap);
+       maxv = max(counts(128:end));
+       myloc = find(counts == maxv);
+       posi = binLocations(myloc);
+       threshould = posi - 0.10;
+  end
+  %imhist(depthmap);
+                
+  for k = 1:wd*ht
+      if depthmap(k)>threshould
+          depthmap(k) = 0;
+      end
+  end
+  Depths(:,:,i) = depthmap;
+end
+dx = zeros(ht,wd);
+dy = zeros(ht,wd);
+dt = zeros(ht,wd);
+imagenormed_dx = zeros(numFrames,ht*wd);
+imagenormed_dy = imagenormed_dx; imagenormed_dt = imagenormed_dx;
+for f = 1:numFrames-1
+     % smooth
+     frame1 = medfilt2(Depths(:, :, f), [5, 5]);
+     frame2 = medfilt2(Depths(:, :, f + 1), [5, 5]);
+                
+     % derivatives along x/y/t
+     [dx(:, :), dy(:, :)] = gradient(frame1);
+     dt(:, :) = frame2 - frame1;
+     imagenormed_dx(f,:) =  reshape(dx(:, :),1,ht*wd);
+     imagenormed_dy(f,:) =  reshape(dy(:, :),1,ht*wd);
+     imagenormed_dt(f,:) =  reshape(dt(:, :),1,ht*wd);
+end
+t= toc(t);
+fprintf('Data collection %1.2f sec for depth video\n',t);
+t= tic(); 
+   
+ [im_WFF_r,im_WFR_r,im_WRF_r,im_WRR_r] = passNetwork(imagenormed_dx,ht,wd,net);
+ [im_WFF_g,im_WFR_g,im_WRF_g,im_WRR_g] = passNetwork(imagenormed_dy,ht,wd,net);
+ [im_WFF_b,im_WFR_b,im_WRF_b,im_WRR_b] = passNetwork(imagenormed_dt,ht,wd,net);
+ t= toc(t);
+ fprintf('processImage %1.2f sec.\n',t);
+ t= tic(); 
+   
+ ff  = getBackRGBImage(im_WFF_r,im_WFF_g,im_WFF_b);
+ fr  = getBackRGBImage(im_WFR_r,im_WFR_g,im_WFR_b);
+ rf  = getBackRGBImage(im_WRF_r,im_WRF_g,im_WRF_b);
+ rr  = getBackRGBImage(im_WRR_r,im_WRR_g,im_WRR_b);
+ t= toc(t);
+ fprintf('getBackRGBImage %1.2f sec.\n',t);
+end
+
+function fullvideoname = getListofFiles(train_list)
+    dataPath = '/home/yuliu/caffe/caffe-master/wfy/wfyDataset_ChaLearn/new_attempt/ChaLearn/IsoGD_phase_1';%for ChaLearn dataset
+    %  dataPath = 'D:\gestureRecognition\DHGD\SKIG_dataset'; %  for SKIG dataset
+    fid = fopen(train_list);
+    a = textscan(fid,'%s');
+    fclose(fid);
+    trainPath = a{1};
+    [length,~] = size(trainPath);
+    i = 1;
+    k = 1;
+ 
+    while (i <= length)
+        videoname_color{k} = trainPath{i};
+        videoname_depth{k} = trainPath{i+1};
+        videoname_label{k} = trainPath{i+2};
+        i = i+3; k = k+1;
+    end
+    if(size(videoname_color,2) ~= size(videoname_depth,2) || size(videoname_color,2) ~= size(videoname_label,2))
+        fprintf('depth video number must equal with color video number!');
+    end
+    for i = 1:size(videoname_color,2)
+        fullvideoname{i,1} = fullfile(dataPath,videoname_color{i});
+        fullvideoname{i,2} = fullfile(dataPath,videoname_depth{i});
+        fullvideoname{i,3} = videoname_label{i};
+    end
+end
+
+function z  = getBackRGBImage(r,g,b)
+    z(:,:,1) = linearMapping(r);
+    z(:,:,2) = linearMapping(g);
+    z(:,:,3) = linearMapping(b);
+    z = uint8(z);
+end
+
+function x = linearMapping(x)
+    minV = min(x(:));
+    maxV = max(x(:));
+    x = x - minV;
+    x = x ./ (maxV - minV);
+    x = x .* 255;
+end
+
+function writeImage(videoname,fid,im,IM_OUT_DIR,type)
+    name= videoname{1};
+    S = regexp(name,'/','split'); 
+    [~,which,~] = fileparts(name);
+    sampleNum = regexp(which,'_','split');
+    imageDir = fullfile(IM_OUT_DIR,S(end-2),S(end-1),sampleNum(end));
+    if exist(imageDir{1},'dir') ~= 7
+        mkdir(imageDir{1});
+    end
+    FILE = fullfile(imageDir,strcat(type,'.jpg'));%for ChaLearn dataset
+    imwrite(im,FILE{1}); % for ChaLearn dataset
+    fprintf(fid,'%s\t%s\n',FILE{1},videoname{3});
+    %FILE = fullfile(IM_OUT_DIR,strcat(name,'_',type,'.jpg'));  % for SKIG dataset
+    %imwrite(im,FILE);
+end
+
+% difine networks
+function net = defineNetwork(CVAL,WIN,STRIDE)     
+    
+    net = cell(1,1);        
+    layer = 1;
+    net{layer}.Window_size = WIN;
+    net{layer}.Stride = STRIDE;
+    net{layer}.poolType = 'classical';  %options : svr, normalFov, classical
+    net{layer}.normalization = 'None';  %options : None, L2, SSRL2, rootL2
+    net{layer}.nonlinear = ''; % The default non-linear function is SER
+    net{layer}.CVAL = CVAL;
+    
+    % Here you can add more layers. Just copy layer 1 and change the ID.
+    
+%     layer = layer + 1;
+%     net{layer}.Window_size = WIN;
+%     net{layer}.Stride = STRIDE;
+%     net{layer}.poolType = 'classical';  %options : svr, normalFov, classical
+%     net{layer}.normalization = 'None';  %options : None, L2, SSRL2, rootL2
+%     net{layer}.nonlinear = ''; % The default non-linear function is SER
+%     net{layer}.CVAL = CVAL;
+    
+    % The final rank pooling layer
+    layer = layer + 1;
+    net{layer}.Window_size = -1;
+    net{layer}.Stride = -1;
+    net{layer}.poolType = 'classical'; %svr normalFov classical
+    net{layer}.normalization = 'None'; % None L2
+    net{layer}.nonlinear = ''; % The default non-linear function is SER
+    net{layer}.CVAL = CVAL;    
+end
+
+function [im_WFF,im_WFR,im_WRF,im_WRR] = passNetwork(data,w,h,net,isNotsaveSequences)  
+    if nargin < 5
+        isNotsaveSequences = 1;
+    end    
+    nFrms = size(data,1);
+    LIMIT  = net{1}.Window_size;
+    if nFrms <= LIMIT
+        LIMIT = LIMIT * 2;
+        nFrms = size(data,1);
+        xqv = 1:nFrms/LIMIT:nFrms;
+        data = interp1(1:nFrms,data,xqv);
+    end
+
+    for layer = 1 : size(net,2)-1
+        Window_size = net{layer}.Window_size;
+        Stride      = net{layer}.Stride;
+        poolType    = net{layer}.poolType;
+        normalization = net{layer}.normalization;
+        nonlinear = net{layer}.nonlinear;
+        CVAL = net{layer}.CVAL;
+        if layer == 1
+            net{layer}.data = one_layer_darwin(data,w,h,Window_size,Stride,poolType,normalization,CVAL,nonlinear);              
+        else
+            net{layer}.data = one_layer_darwin(net{layer-1}.data,w,h,Window_size,Stride,poolType,normalization,CVAL,nonlinear);
+        end        
+    end
+    CVAL = net{layer}.CVAL;   
+    if isNotsaveSequences == 1
+        switch net{end}.poolType
+            case 'classical'
+                % net{end-1}.data锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷态图锟酵凤拷锟斤拷态图
+                [~,lenght1] = size(net{end-1}.data);
+                first_layer_fow = net{end-1}.data(:,1:w*h);  % 18*(320*240) = 18*76800
+                first_layer_rev = net{end-1}.data(:,w*h+1:lenght1);
+                
+                W_fow_second = genRepresentation(first_layer_fow,CVAL,net{end}.nonlinear);
+                W_rev_second = genRepresentation(first_layer_rev,CVAL,net{end}.nonlinear);
+                [lenght2,~] = size(W_fow_second);
+                im_WFF = reshape(W_fow_second(1:w*h,:),w,h);
+                im_WFR = reshape(W_fow_second(w*h+1:lenght2,:),w,h);
+                [lenght3,~] = size(W_rev_second);
+                im_WRF = reshape(W_rev_second(1:w*h,:),w,h);
+                im_WRR = reshape(W_rev_second(w*h+1:lenght3,:),w,h);
+        end           
+    end
+end
+
+
+function out = one_layer_darwin(data,w,h,Window_size,Stride,poolType,normalization,CVAL,nonlinear)
+    n = size(data,1);
+    Dim = size(data,2)*2;
+    fstart = 1:Stride:(n-Window_size+1);
+    fend = fstart + Window_size -1;    
+    switch poolType
+        case 'classical'
+            out = zeros(numel(fstart),Dim);              
+    end
+    parfor  chunk = 1 : numel(fstart)
+        data_chuck = data(fstart(chunk):fend(chunk),:);
+        switch poolType
+            case 'classical'
+                out(chunk,:) = genRepresentation(data_chuck,CVAL,nonlinear);               
+        end              
+    end
+    %fprintf('\n');
+    switch normalization
+            case 'L2'
+                out = normalizeL2(out);
+            case 'None'
+                
+            case 'rootL2'                
+                out = normalizeL2(sqrt(out));
+            case 'SSRL2'                
+                out = normalizeL2(sign(out).*sqrt(abs(out)));    
+    end
+end
+
+function W = genRepresentation(data,CVAL,nonLin)
+    OneToN = [1:size(data,1)]';    
+    Data = cumsum(data);
+    Data = Data ./ repmat(OneToN,1,size(Data,2));
+    W_fow = liblinearsvr(getNonLinearity(Data,nonLin),CVAL,2); clear Data; 			
+    order = 1:size(data,1);
+    [~,order] = sort(order,'descend');
+    data = data(order,:);
+    Data = cumsum(data);
+    Data = Data ./ repmat(OneToN,1,size(Data,2));
+    W_rev = liblinearsvr(getNonLinearity(Data,nonLin),CVAL,2);
+    W = [W_fow;W_rev];
+end
+
+function Data = getNonLinearity(Data,nonLin)    
+    switch nonLin
+        case ''
+            %Data = rootExpandKernelMap(Data);
+             Data = sign(Data).*sqrt(abs(Data));
+        case 'tanh'
+            Data = tanh(Data);
+        case 'ssr'
+            Data = sign(Data).*sqrt(abs(Data));
+        case 'chi2'
+            Data = vl_homkermap(Data',2,'kchi2');
+            Data = Data';
+        case 'none'
+            
+        case 'chi2exp'
+            u = vl_homkermap(Data',1,'kchi2')';	
+            Data = rootExpandKernelMap(u);
+        case 'ser'
+            Data = rootExpandKernelMap(Data);    
+            
+    end
+end
+
+function w = liblinearsvr(Data,C,normD)
+    if normD == 2
+        Data = normalizeL2(Data);
+    end    
+    if normD == 1
+        Data = normalizeL1(Data);
+    end    
+    N = size(Data,1);
+    Labels = [1:N]';
+    model = train(double(Labels), sparse(double(Data)),sprintf('-c %1.6f -s 11 -q',C) );
+    w = model.w';    
+end
+
+function x = normalizeL2(x)
+% 	for i = 1 : size(X,1)
+% 		if norm(X(i,:)) ~= 0
+% 			X(i,:) = X(i,:) ./ norm(X(i,:));
+% 		end
+%     end
+    v = sqrt(sum(x.*conj(x),2));
+    v(find(v==0))=1;
+    x=x./repmat(v,1,size(x,2));
+end
+
+function o = rootExpandKernelMap(x)
+    s =sign(x);
+    y = (s.*x).^0.5;
+    o = [y.*(s==1) y.*(s==-1)]; 
+     
+end
+
+
+% get depth motion maps
+function rgbdepth = getDMM(Dname) % getDMM
+Dobj = VideoReader(Dname);
+NumFrames = Dobj.NumberofFrames;
+wd = Dobj.Width;
+ht = Dobj.Height;
+DMM = zeros(ht,wd);
+pre_frame = zeros(wd,ht);
+for k = 1:NumFrames
+    if( k == 1)
+        depthmap = read(Dobj,k);
+        depthmap = rgb2gray(depthmap);
+        pre_frame = im2double(depthmap);
+    end
+    if(k > 1)
+        depthmap = read(Dobj,k);
+        depthmap = rgb2gray(depthmap);
+        current_frame = im2double(depthmap);
+        DMM = DMM + abs(current_frame - pre_frame);
+    end       
+end
+DMM = medfilt2(DMM);
+DMM = medfilt2(DMM);
+DMM = medfilt2(DMM);
+DMM = medfilt2(DMM);
+rgbdepth= depthMap2rgb(DMM,wd,ht); 
+%imshow(rgbdepth);
+end
+
+function rgbImage = depthMap2rgb(map,wd,ht)
+%DEPTHMAP2RGB(map,wd,ht) converts a depth map into a RGB color image
+%   It is used for display depath map
+
+if (nargin < 3)
+    message = 'Not sufficient number of input args!';
+    display(message);
+end
+[clrlut,sz] = depthMapColorTable();
+maxvalue = max(max(map));
+minvalue = min(min(map));
+rgbImage = uint8(zeros(ht,wd,3));
+normalized = (map-minvalue)/(maxvalue-minvalue);
+index = min(int16(normalized *511.0+1),512);
+
+for y=1:ht
+    for x = 1:wd
+        rgbImage(y,x,1) = clrlut(index(y,x),1);
+        rgbImage(y,x,2) = clrlut(index(y,x),2);
+        rgbImage(y,x,3) = clrlut(index(y,x),3);
+    end
+end
+end
+
+function [ depthColorTable,sz ] =depthMapColorTable( )
+%DEPTHCOLORTABLE() generates a color lookup tabe for depth map
+%   Rainbow linea gradient mirros at centre point with gradual dimming
+%   starting at the centre point to start of table
+
+
+gutter = 0.2;
+depthColorTable = zeros(512,3, 'uint8');
+
+tableIndex = 257;
+step = (1.0 - (gutter * 2.0)) /256;
+for t=gutter:step:((1.0-gutter)-step)
+    color = zeros(1,3);
+    band = 0.7; %Bigger # == move overlap.
+    curveExp = 2.0;%original 2.0
+    bandGap = 1.0 - band;
+    for i=1:3
+        s = (t-bandGap*0.5*(i-1))/band;
+        if ((s >= 0) && (s <= 1))
+           color(i) = power(sin(s * 3.1415927 * 2.0 - 3.1415927 * 0.5) * 0.5 + 0.5, curveExp);
+        end
+    end
+    depthColorTable(tableIndex,1)= uint8(color(1)*255.0);
+    depthColorTable(tableIndex,2)= uint8(color(2)*255.0);
+    depthColorTable(tableIndex,3)= uint8(color(3)*255.0);
+    tableIndex = tableIndex + 1;
+end
+
+for i=1:256
+    s = depthColorTable(512-i+1,:);
+    dim = double((i-1))/256;
+    depthColorTable(i,1) = uint8(s(1)*(0.25+0.75*dim));
+    depthColorTable(i,2) = uint8(s(2)*(0.25+0.75*dim));
+    depthColorTable(i,3) = uint8(s(3)*(0.25+0.75*dim)); 
+end
+sz = 512;
+end
