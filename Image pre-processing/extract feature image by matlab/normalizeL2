@@ -1,0 +1,10 @@
+function x = normalizeL2(x)
+% 	for i = 1 : size(X,1)
+% 		if norm(X(i,:)) ~= 0
+% 			X(i,:) = X(i,:) ./ norm(X(i,:));
+% 		end
+%     end
+    v = sqrt(sum(x.*conj(x),2));
+    v(find(v==0))=1;
+    x=x./repmat(v,1,size(x,2));
+end
