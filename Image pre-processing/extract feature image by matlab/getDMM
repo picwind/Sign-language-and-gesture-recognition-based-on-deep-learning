@@ -1,0 +1,27 @@
+function rgbdepth = getDMM(Dname) % getDMM
+Dobj = VideoReader(Dname);
+NumFrames = Dobj.NumberofFrames;
+wd = Dobj.Width;
+ht = Dobj.Height;
+DMM = zeros(ht,wd);
+pre_frame = zeros(wd,ht);
+for k = 1:NumFrames
+    if( k == 1)
+        depthmap = read(Dobj,k);
+        depthmap = rgb2gray(depthmap);
+        pre_frame = im2double(depthmap);
+    end
+    if(k > 1)
+        depthmap = read(Dobj,k);
+        depthmap = rgb2gray(depthmap);
+        current_frame = im2double(depthmap);
+        DMM = DMM + abs(current_frame - pre_frame);
+    end       
+end
+DMM = medfilt2(DMM);
+DMM = medfilt2(DMM);
+DMM = medfilt2(DMM);
+DMM = medfilt2(DMM);
+rgbdepth= depthMap2rgb(DMM,wd,ht); 
+%imshow(rgbdepth);
+end
