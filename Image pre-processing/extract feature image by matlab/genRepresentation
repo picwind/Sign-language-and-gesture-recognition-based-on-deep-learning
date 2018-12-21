@@ -1,0 +1,13 @@
+function W = genRepresentation(data,CVAL,nonLin)
+    OneToN = [1:size(data,1)]';    
+    Data = cumsum(data);
+    Data = Data ./ repmat(OneToN,1,size(Data,2));
+    W_fow = liblinearsvr(getNonLinearity(Data,nonLin),CVAL,2); clear Data; 			
+    order = 1:size(data,1);
+    [~,order] = sort(order,'descend');
+    data = data(order,:);
+    Data = cumsum(data);
+    Data = Data ./ repmat(OneToN,1,size(Data,2));
+    W_rev = liblinearsvr(getNonLinearity(Data,nonLin),CVAL,2);
+    W = [W_fow;W_rev];
+end
