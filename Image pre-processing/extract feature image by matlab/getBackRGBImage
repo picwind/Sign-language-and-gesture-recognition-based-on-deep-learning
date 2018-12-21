@@ -1,0 +1,6 @@
+function z  = getBackRGBImage(r,g,b)
+    z(:,:,1) = linearMapping(r);
+    z(:,:,2) = linearMapping(g);
+    z(:,:,3) = linearMapping(b);
+    z = uint8(z);
+end
