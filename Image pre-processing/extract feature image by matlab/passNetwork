@@ -1,0 +1,46 @@
+function [im_WFF,im_WFR,im_WRF,im_WRR] = passNetwork(data,w,h,net,isNotsaveSequences)  
+    if nargin < 5
+        isNotsaveSequences = 1;
+    end    
+    nFrms = size(data,1);
+    LIMIT  = net{1}.Window_size;
+    if nFrms <= LIMIT
+        LIMIT = LIMIT * 2;
+        nFrms = size(data,1);
+        xqv = 1:nFrms/LIMIT:nFrms;
+        data = interp1(1:nFrms,data,xqv);
+    end
+
+    for layer = 1 : size(net,2)-1
+        Window_size = net{layer}.Window_size;
+        Stride      = net{layer}.Stride;
+        poolType    = net{layer}.poolType;
+        normalization = net{layer}.normalization;
+        nonlinear = net{layer}.nonlinear;
+        CVAL = net{layer}.CVAL;
+        if layer == 1
+            net{layer}.data = one_layer_darwin(data,w,h,Window_size,Stride,poolType,normalization,CVAL,nonlinear);              
+        else
+            net{layer}.data = one_layer_darwin(net{layer-1}.data,w,h,Window_size,Stride,poolType,normalization,CVAL,nonlinear);
+        end        
+    end
+    CVAL = net{layer}.CVAL;   
+    if isNotsaveSequences == 1
+        switch net{end}.poolType
+            case 'classical'
+                % net{end-1}.data锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷态图锟酵凤拷锟斤拷态图
+                [~,lenght1] = size(net{end-1}.data);
+                first_layer_fow = net{end-1}.data(:,1:w*h);  % 18*(320*240) = 18*76800
+                first_layer_rev = net{end-1}.data(:,w*h+1:lenght1);
+                
+                W_fow_second = genRepresentation(first_layer_fow,CVAL,net{end}.nonlinear);
+                W_rev_second = genRepresentation(first_layer_rev,CVAL,net{end}.nonlinear);
+                [lenght2,~] = size(W_fow_second);
+                im_WFF = reshape(W_fow_second(1:w*h,:),w,h);
+                im_WFR = reshape(W_fow_second(w*h+1:lenght2,:),w,h);
+                [lenght3,~] = size(W_rev_second);
+                im_WRF = reshape(W_rev_second(1:w*h,:),w,h);
+                im_WRR = reshape(W_rev_second(w*h+1:lenght3,:),w,h);
+        end           
+    end
+end
