@@ -1,0 +1,7 @@
+function x = linearMapping(x)
+    minV = min(x(:));
+    maxV = max(x(:));
+    x = x - minV;
+    x = x ./ (maxV - minV);
+    x = x .* 255;
+end
