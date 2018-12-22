@@ -59,3 +59,4 @@ def conTestImageBoundaryGenerator(testing_datalist, batch_size, images_size, mun
          y_label.append(label)
       y_label = np_utils.to_categorical(y_label, mun_classes)
       yield (X_data, y_label)
+%.py
