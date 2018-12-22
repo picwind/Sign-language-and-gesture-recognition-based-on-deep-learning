@@ -111,3 +111,4 @@ model.fit_generator(conTrainImageBoundaryGenerator(train_filename, batch_size, i
                     validation_steps=test_steps,
                     initial_epoch=init_epoch
                     )
+%.py
