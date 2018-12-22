@@ -1,4 +1,4 @@
-//制作标签
+//制作标签(这是一个.cpp)
 #include <stdio.h>
 int main(void)
 {
