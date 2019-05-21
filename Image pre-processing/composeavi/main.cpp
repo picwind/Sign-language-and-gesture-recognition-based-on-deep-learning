@@ -18,7 +18,7 @@ int main()
 	for (i = 1; i <= 2940; i++)
 	{
 		stringstream videopath;
-		videopath << "D://大床数据集/T&T/" << std::setfill('0') << std::setw(5) << i << ".avi";
+		videopath << "D://大创数据集/T&T/" << std::setfill('0') << std::setw(5) << i << ".avi";
 		string trans;
 		videopath >> trans;
 		writer = cvCreateVideoWriter(trans.c_str(), CV_FOURCC('D', 'I', 'V', 'X'),
