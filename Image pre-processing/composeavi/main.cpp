@@ -28,7 +28,7 @@ int main()
 		for (n = 0; n<33; n++) {
 
 			char tmpName[300];
-			sprintf_s(tmpName, "D://大床数据集/mydada/%05d/%03d.jpg", i, n);
+			sprintf_s(tmpName, "D://大创数据集/mydada/%05d/%03d.jpg", i, n);
 			cout << tmpName << endl;
 			img = cvLoadImage(tmpName);
 
