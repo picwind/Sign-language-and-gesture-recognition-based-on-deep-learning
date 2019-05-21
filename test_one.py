@@ -76,3 +76,4 @@ if __name__ == '__main__':
     data = './32video/4/0101.avi'
     y = test(data)
     print(y)
+#GUIdemo的依赖项
